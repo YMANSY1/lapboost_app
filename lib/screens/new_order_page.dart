@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:lapboost_app/models/cart.dart';
 import 'package:lapboost_app/models/sql_service.dart';
-import 'package:lapboost_app/screens/make_order_page.dart';
 import 'package:mysql1/mysql1.dart';
 
 class NewOrderPage extends StatefulWidget {
@@ -66,15 +66,11 @@ class NewOrderPageState extends State<NewOrderPage> {
                       'No services found.')) // Show message if no services are found
               : ListView.builder(
                   addAutomaticKeepAlives: false,
-                  itemCount: services.length,
+                  itemCount: --services.length,
                   itemBuilder: (context, index) {
                     var service = services[index];
                     return GestureDetector(
-                      onTap: () {
-                        Navigator.of(context).push(MaterialPageRoute(
-                            builder: (context) => MakeOrderPage(
-                                user: widget.user, service: service)));
-                      },
+                      onTap: () {},
                       child: Card(
                         margin: const EdgeInsets.symmetric(
                             vertical: 8.0, horizontal: 16.0),
@@ -101,24 +97,51 @@ class NewOrderPageState extends State<NewOrderPage> {
                                 ),
                               ),
                               const SizedBox(width: 16.0),
-                              // Name of the service
+                              // Column to stack the name and price below it
                               Expanded(
-                                child: Text(
-                                  service['Service_Type'],
-                                  style: const TextStyle(
-                                    fontSize: 18.0,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      service['Service_Type'],
+                                      style: const TextStyle(
+                                        fontSize: 18.0,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8.0),
+                                    Text(
+                                      '${service['Service_Cost'].toString()} EGP',
+                                      style: const TextStyle(
+                                        fontSize: 16.0,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              // Price to the far right, colored green
-                              Text(
-                                '${service['Service_Cost'].toString()} EGP',
-                                style: const TextStyle(
-                                  fontSize: 16.0,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.green,
+                              // Add to cart icon
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.add_shopping_cart,
+                                  color: Colors.blue,
                                 ),
+                                onPressed: () {
+                                  final cartInstance = Cart();
+                                  cartInstance.addItem(
+                                    CartItem(
+                                      service: service,
+                                      quantity: 1,
+                                    ),
+                                  );
+                                  ScaffoldMessenger.of(context)
+                                    ..clearSnackBars()
+                                    ..showSnackBar(SnackBar(
+                                        content: Text(
+                                            'Added ${service['Service_Type']} to cart')));
+                                  print(Cart.cartItems);
+                                },
                               ),
                             ],
                           ),

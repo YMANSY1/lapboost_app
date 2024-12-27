@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:lapboost_app/models/cart.dart';
 import 'package:lapboost_app/models/sql_service.dart';
-import 'package:lapboost_app/screens/buy_item_screen.dart';
 import 'package:mysql1/mysql1.dart';
 
 class MarketplacePage extends StatefulWidget {
@@ -13,7 +13,7 @@ class MarketplacePage extends StatefulWidget {
 
 class _MarketplacePageState extends State<MarketplacePage> {
   late MySqlConnection conn;
-  late List<ResultRow> inventory;
+  late List<ResultRow> stock;
   List<String> categories = [
     'All',
     'Battery',
@@ -41,20 +41,20 @@ class _MarketplacePageState extends State<MarketplacePage> {
   @override
   void initState() {
     super.initState();
-    _getInventory();
+    _getstock();
   }
 
-  Future<void> _getInventory() async {
+  Future<void> _getstock() async {
     try {
       // Establish connection (adjust the connection details as needed)
       conn = await SqlService.getConnection();
 
       // Fetch services from the database
-      var results = await conn.query('SELECT * FROM inventory');
+      var results = await conn.query('SELECT * FROM stock');
 
-      // Store results in the inventory list
+      // Store results in the stock list
       setState(() {
-        inventory = results.toList();
+        stock = results.toList();
         isLoading = false; // Set loading to false after data is fetched
       });
     } catch (e) {
@@ -65,10 +65,10 @@ class _MarketplacePageState extends State<MarketplacePage> {
     }
   }
 
-  // Filter inventory based on selected category and search query
-  List<ResultRow> getFilteredInventory() {
+  // Filter stock based on selected category and search query
+  List<ResultRow> getFilteredstock() {
     // Filter by search query
-    var filteredInventory = inventory.where((item) {
+    var filteredstock = stock.where((item) {
       var partName = item['Part_Name']?.toLowerCase() ?? '';
       return partName.contains(searchQuery.toLowerCase());
     }).toList();
@@ -77,12 +77,12 @@ class _MarketplacePageState extends State<MarketplacePage> {
     if (selectedCategory != null &&
         selectedCategory!.isNotEmpty &&
         selectedCategory != 'All') {
-      filteredInventory = filteredInventory
+      filteredstock = filteredstock
           .where((item) => item['Category'] == selectedCategory)
           .toList();
     }
 
-    return filteredInventory;
+    return filteredstock;
   }
 
   @override
@@ -151,7 +151,7 @@ class _MarketplacePageState extends State<MarketplacePage> {
           ),
         ),
 
-        // Display inventory items
+        // Display stock items
         isLoading
             ? const Center(
                 child: CircularProgressIndicator(),
@@ -165,59 +165,117 @@ class _MarketplacePageState extends State<MarketplacePage> {
                     crossAxisSpacing: 8,
                     mainAxisSpacing: 8,
                   ),
-                  itemCount: getFilteredInventory().length,
+                  itemCount: getFilteredstock().length,
                   itemBuilder: (context, index) {
-                    var item = getFilteredInventory()[index];
+                    var item = getFilteredstock()[index];
 
                     return GestureDetector(
-                      onTap: () {
-                        Navigator.of(context).push(MaterialPageRoute(
-                            builder: (context) => BuyItemScreen(
-                                user: widget.user, chosenItem: item)));
-                      },
+                      onTap: () {},
                       child: Card(
                         elevation: 4,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SizedBox(
-                                width: double.infinity,
-                                child: Image.network(
-                                  item['image_link'] ??
-                                      'https://via.placeholder.com/150',
-                                  fit: BoxFit.contain,
-                                  height: 100,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              // Part Name with flexible text handling
-                              Expanded(
-                                child: Text(
-                                  item['Part_Name'] ?? 'No Name',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
+                        child: Stack(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: Image.network(
+                                      item['image_link'] ??
+                                          'https://via.placeholder.com/150',
+                                      fit: BoxFit.contain,
+                                      height: 100,
+                                    ),
                                   ),
-                                  overflow:
-                                      TextOverflow.ellipsis, // Handle overflow
-                                  maxLines: 2, // Limit the number of lines
+                                  const SizedBox(height: 8),
+                                  // Part Name with flexible text handling
+                                  Expanded(
+                                    child: Text(
+                                      item['Part_Name'] ?? 'No Name',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                      overflow: TextOverflow
+                                          .ellipsis, // Handle overflow
+                                      maxLines: 2, // Limit the number of lines
+                                    ),
+                                  ),
+                                  Text(
+                                    'EGP ${item['Market_Price'] ?? 'N/A'}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: CircleAvatar(
+                                backgroundColor: Colors.lightBlue,
+                                child: IconButton(
+                                  icon: const Icon(
+                                    Icons.add_shopping_cart,
+                                    color: Colors.white,
+                                  ),
+                                  onPressed: () {
+                                    final cartInstance =
+                                        Cart(); // Create an instance of Cart
+                                    final cart = Cart
+                                        .cartItems; // Get the list of cart items
+                                    var inCart = false;
+                                    CartItem? existingCartItem;
+
+                                    // Check if the item is already in the cart
+                                    cart.forEach((cartItem) {
+                                      if (cartItem.item?['Part_ID'] ==
+                                          item['Part_ID']) {
+                                        inCart = true;
+                                        existingCartItem =
+                                            cartItem; // Save the existing cart item
+                                      }
+                                    });
+
+                                    // If the item is already in the cart, increment the quantity
+                                    if (inCart) {
+                                      existingCartItem!.quantity +=
+                                          1; // Increment the quantity
+                                      ScaffoldMessenger.of(context)
+                                        ..clearSnackBars()
+                                        ..showSnackBar(SnackBar(
+                                            content: Text(
+                                                'Added ${existingCartItem?.quantity} ${item['Part_Name']} in cart')));
+                                    } else {
+                                      // If not, add the new item to the cart
+                                      CartItem cartItem = CartItem(
+                                        item: item,
+                                        quantity: 1, // Start with quantity 1
+                                      );
+                                      cartInstance.addItem(
+                                          cartItem); // Add the item to the cart
+                                      ScaffoldMessenger.of(context)
+                                        ..clearSnackBars()
+                                        ..showSnackBar(SnackBar(
+                                            content: Text(
+                                                'Added ${cartItem.quantity} ${item['Part_Name']} to cart')));
+                                    }
+
+                                    // Print the current cart items
+                                    print(Cart.cartItems);
+                                  },
                                 ),
                               ),
-                              Text(
-                                'EGP ${item['Market_Price'] ?? 'N/A'}',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.green,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     );

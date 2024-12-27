@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:lapboost_app/screens/auth_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const LapboostApp());
 }
 

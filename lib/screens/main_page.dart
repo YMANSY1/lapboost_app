@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:lapboost_app/screens/cart_page.dart';
 import 'package:lapboost_app/screens/home_page.dart';
 import 'package:lapboost_app/screens/marketplace_page.dart';
 import 'package:lapboost_app/screens/settings_page.dart';
@@ -59,6 +60,16 @@ class _MainPageState extends State<MainPage> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Obx(() => Text(titleText.value)), // Dynamic app bar title
+        actions: [
+          IconButton(
+              onPressed: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (context) => CartPage(
+                          user: widget.user,
+                        )));
+              },
+              icon: const Icon(Icons.shopping_cart))
+        ],
       ),
       body: _pages[_selectedIndex], // Display the selected page
       bottomNavigationBar: BottomNavigationBar(

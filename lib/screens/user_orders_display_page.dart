@@ -1,193 +1,58 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart'; // Ensure you import this for date formatting.
 import 'package:lapboost_app/models/sql_service.dart';
-import 'package:lapboost_app/widgets/user_orders_card.dart';
 import 'package:mysql1/mysql1.dart';
 
 class UserOrdersDisplayPage extends StatefulWidget {
   final ResultRow user;
 
-  const UserOrdersDisplayPage({Key? key, required this.user}) : super(key: key);
+  UserOrdersDisplayPage({super.key, required this.user});
 
   @override
   State<UserOrdersDisplayPage> createState() => _UserOrdersDisplayPageState();
 }
 
 class _UserOrdersDisplayPageState extends State<UserOrdersDisplayPage> {
-  late Future<List<Map<String, dynamic>>> userOrdersWithServices;
+  Future<List<Map<String, dynamic>>> _fetchOrdersAndDetails() async {
+    final conn = await SqlService.getConnection();
+    try {
+      // Fetch all orders for the user
+      final orders = await conn.query('''
+        SELECT * FROM orders
+        WHERE Customer_ID = ?
+      ''', [widget.user['Customer_ID']]);
 
-  @override
-  void initState() {
-    super.initState();
-    userOrdersWithServices = fetchUserOrdersWithServicesAndParts();
-  }
+      List<Map<String, dynamic>> ordersWithDetails = [];
 
-  Future<void> cancelOrder(ResultRow order) async {
-    final confirmation = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text("Cancel Order?"),
-          content: const Text(
-            "Are you sure you want to cancel this order? This action cannot be undone.",
-          ),
-          actions: [
-            TextButton(
-              child: const Text("CANCEL"),
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-            TextButton(
-              child: const Text("YES"),
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmation == true) {
-      try {
-        final conn = await SqlService.getConnection();
-        final int? orderQuantity;
-        final ResultRow? orderPart;
-
-        if (order['Service_ID'] == 19) {
-          // Fetch the parts associated with the order
-          final res = await conn.query('''
-          SELECT * FROM order_parts
-          WHERE Order_ID= ?
+      // For each order, fetch its details
+      for (var order in orders) {
+        final orderDetails = await conn.query('''
+          SELECT od.Order_ID, od.Order_Part_ID, od.Device_Serial_Number, 
+                 op.Quantity, op.Part_ID, s.Service_Type, 
+                 d.Device_Model, d.Device_Manufacturer,
+                 stk.Part_Name
+          FROM order_details od
+          LEFT JOIN ordered_parts op ON od.Order_Part_ID = op.Order_Part_ID
+          LEFT JOIN services s ON od.Service_ID = s.Service_ID
+          LEFT JOIN devices d ON od.Device_Serial_Number = d.Device_Serial_Number
+          LEFT JOIN stock stk ON op.Part_ID = stk.Part_ID
+          LEFT JOIN orders ord ON ord.Order_ID= od.Order_ID
+          WHERE od.Order_ID = ?
         ''', [order['Order_ID']]);
 
-          if (res.isNotEmpty) {
-            orderPart = res.first;
-            orderQuantity = orderPart['Quantity'];
-
-            // Delete the parts associated with the order
-            await conn.query('''
-            DELETE FROM order_parts
-            WHERE Order_ID=?
-          ''', [order['Order_ID']]);
-
-            // Update inventory by adding back the quantity
-            await conn.query('''
-            UPDATE inventory
-            SET Quantity_in_Stock=Quantity_in_Stock + ?
-            WHERE Part_ID= ?
-          ''', [orderQuantity, orderPart['Part_ID']]);
-          }
-        }
-
-        // Delete the order
-        await conn.query('''
-        DELETE FROM orders
-        WHERE Order_ID = ?
-      ''', [order['Order_ID']]);
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Order cancelled successfully')),
-        );
-
-        // Refresh the data
-        setState(() {
-          userOrdersWithServices = fetchUserOrdersWithServicesAndParts();
-        });
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to cancel order: $e')),
-        );
-      }
-    }
-  }
-
-  Future<List<Map<String, dynamic>>>
-      fetchUserOrdersWithServicesAndParts() async {
-    try {
-      final conn = await SqlService.getConnection();
-
-      // Fetch all orders for the user
-      final orders = await conn.query(
-        '''
-      SELECT * FROM orders
-      WHERE Customer_ID = ?
-      ''',
-        [widget.user['Customer_ID']],
-      );
-
-      // Fetch services, parts, and inventory images for the orders
-      List<Map<String, dynamic>> ordersWithServicesAndParts = [];
-      for (var order in orders) {
-        // Fetch the associated service
-        final serviceResult = await conn.query(
-          '''
-        SELECT * FROM services
-        WHERE Service_ID = ?
-        ''',
-          [order['Service_ID']],
-        );
-
-        // Determine the service image link, if available
-        String? serviceImageLink;
-        if (serviceResult.isNotEmpty) {
-          serviceImageLink = serviceResult.first['image_link'];
-        }
-
-        print(order['Order_ID']);
-
-        // Fetch the associated parts
-        final partsResult = await conn.query(
-          '''
-        SELECT * FROM order_parts
-        WHERE Order_ID = ?
-        ''',
-          [order['Order_ID']],
-        );
-
-        // Fetch inventory details including Part_Name and image links if parts exist
-        List<Map<String, dynamic>> parts = [];
-        String? inventoryImageLink;
-        List<String> partNames = [];
-        if (partsResult.isNotEmpty) {
-          for (var part in partsResult) {
-            parts.add(part.fields);
-
-            // Fetch the image link and Part_Name for each part from the inventory
-            final inventoryResult = await conn.query(
-              '''
-            SELECT Part_Name, image_link FROM inventory
-            WHERE Part_ID = ?
-            ''',
-              [part['Part_ID']],
-            );
-
-            if (inventoryResult.isNotEmpty) {
-              partNames.add(inventoryResult.first['Part_Name'] as String);
-              inventoryImageLink =
-                  inventoryResult.first['image_link'] as String?;
-            }
-          }
-        }
-
-        // Aggregate part names into a single string
-        String? partNamesString =
-            partNames.isNotEmpty ? partNames.join(' ') : null;
-
-        // Use the service image link if available, otherwise use the inventory image link
-        String? finalImageLink = serviceImageLink ?? inventoryImageLink;
-
-        // Add the order, service, parts, final image link, and part names to the result list
-        ordersWithServicesAndParts.add({
+        ordersWithDetails.add({
           'order': order,
-          'service': serviceResult.isNotEmpty ? serviceResult.first : null,
-          'parts': partsResult.isNotEmpty ? partsResult.first.fields : null,
-          'imageLink': finalImageLink,
-          'partNames': partNamesString,
+          'details': orderDetails
+              .toList(), // Convert to a list for easier manipulation
         });
       }
 
-      return ordersWithServicesAndParts;
+      return ordersWithDetails;
     } catch (e) {
-      print('Error fetching user orders with services and parts: $e');
+      print('Error fetching orders: $e');
       return [];
+    } finally {
+      await conn.close();
     }
   }
 
@@ -195,30 +60,233 @@ class _UserOrdersDisplayPageState extends State<UserOrdersDisplayPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: userOrdersWithServices,
-        builder: (BuildContext context,
-            AsyncSnapshot<List<Map<String, dynamic>>> snapshot) {
+        future: _fetchOrdersAndDetails(),
+        builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
+          }
+
+          if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          }
+
+          final orders = snapshot.data ?? [];
+
+          if (orders.isEmpty) {
             return const Center(child: Text('No orders found.'));
           }
 
-          final ordersWithServicesAndParts = snapshot.data!;
           return ListView.builder(
-            itemCount: ordersWithServicesAndParts.length,
-            itemBuilder: (BuildContext context, int index) {
-              final orderData = ordersWithServicesAndParts[index];
-              // final orderParts = orderData['parts'];
-              return OrderCard(
-                order: orderData['order'],
-                orderService: orderData['service'],
-                orderParts: orderData['parts'],
-                imageLink: orderData['imageLink'],
-                name: orderData['partNames'],
-                cancelOnPressed: () => cancelOrder(orderData['order']),
+            itemCount: orders.length,
+            itemBuilder: (context, index) {
+              final order = orders[index]['order'];
+              final orderDetails = orders[index]['details'];
+
+              // Map statuses to display names and colors
+              final Map<String, dynamic> statusMapping = {
+                'To Be Scheduled': {'label': 'Pending', 'color': Colors.orange},
+                'Scheduled': {'label': 'Under Repair', 'color': Colors.blue},
+                'Received': {'label': 'Delivered', 'color': Colors.green},
+                'Lost': {'label': 'Lost', 'color': Colors.red},
+              };
+
+              final orderStatus = order['Order_Status'];
+              final displayStatus = statusMapping[orderStatus] ??
+                  {'label': orderStatus, 'color': Colors.grey};
+
+              return Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                child: Card(
+                  elevation: 8,
+                  child: ExpansionTile(
+                    title: Text(
+                      'Order #${order['Order_ID']}',
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Received on ${DateFormat('MMMM dd, yyyy').format(order['Date_Received'])}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        Row(
+                          children: [
+                            Container(
+                              width: 15,
+                              height: 15,
+                              decoration: BoxDecoration(
+                                color: displayStatus['color'],
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Add spacing between the container and the text
+                            Text(
+                              displayStatus['label'],
+                              style: TextStyle(
+                                color: displayStatus[
+                                    'color'], // Adjust text color for visibility
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        )
+                      ],
+                    ),
+                    children: [
+                      for (var detail in orderDetails)
+                        ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.grey.shade200,
+                            child: detail['Service_Type'] != null
+                                ? const Icon(Icons.design_services,
+                                    color: Colors.blue)
+                                : const Icon(Icons.memory,
+                                    color: Colors.orange),
+                          ),
+                          title: Text(
+                            detail['Service_Type'] ?? '${detail['Part_Name']}',
+                          ),
+                          subtitle: Text(
+                            detail['Service_Type'] != null
+                                ? 'Device: ${detail['Device_Manufacturer']} ${detail['Device_Model']}, Serial No. ${detail['Device_Serial_Number']}'
+                                : 'Part Name: ${detail['Part_Name']}, Quantity: ${detail['Quantity']}',
+                          ),
+                          trailing: Text(
+                            detail['Service_Type'] != null ? 'Service' : 'Part',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Total Amount:',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              '${order['Total_Amount']} EGP',
+                              style: const TextStyle(
+                                  fontSize: 16, color: Colors.green),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                        child: SizedBox(
+                          height: 33,
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              bool confirmCancel = await showDialog(
+                                context: context,
+                                builder: (BuildContext context) {
+                                  return AlertDialog(
+                                    title: const Text('Confirm Cancelation'),
+                                    content: const Text(
+                                        'Are you sure you want to cancel this order? This action cannot be undone.'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () {
+                                          Navigator.of(context).pop(
+                                              false); // Return false when canceled
+                                        },
+                                        child: const Text('No'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          Navigator.of(context).pop(
+                                              true); // Return true when confirmed
+                                        },
+                                        child: const Text('Yes'),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+
+                              if (confirmCancel == true) {
+                                try {
+                                  final conn = await SqlService.getConnection();
+
+                                  // Begin a transaction
+                                  await conn.query('START TRANSACTION');
+
+                                  // Retrieve all parts associated with the order
+                                  final parts = await conn.query('''
+          SELECT op.Part_ID, op.Quantity
+          FROM ordered_parts op
+          JOIN order_details od ON op.Order_Part_ID = od.Order_Part_ID
+          WHERE od.Order_ID = ?
+        ''', [order['Order_ID']]);
+
+                                  // Update stock quantities
+                                  for (var part in parts) {
+                                    await conn.query('''
+            UPDATE stock
+            SET Quantity_in_Stock = Quantity_in_Stock + ?
+            WHERE Part_ID = ?
+          ''', [part['Quantity'], part['Part_ID']]);
+                                  }
+
+                                  // Delete the order (cascades other entries automatically)
+                                  await conn.query('''
+          DELETE FROM orders
+          WHERE Order_ID = ?
+        ''', [order['Order_ID']]);
+
+                                  // Commit the transaction
+                                  await conn.query('COMMIT');
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text(
+                                            'Order canceled successfully!')),
+                                  );
+
+                                  setState(
+                                      () {}); // Refresh UI after cancelation
+                                } catch (e) {
+                                  // Rollback in case of error
+                                  final conn = await SqlService.getConnection();
+                                  await conn.query('ROLLBACK');
+
+                                  // Handle errors and notify the user
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content:
+                                            Text('Error canceling order: $e')),
+                                  );
+                                }
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8)),
+                              backgroundColor: const Color(0xffffa7b5),
+                              side:
+                                  const BorderSide(color: Colors.red, width: 1),
+                            ),
+                            child: const Text(
+                              'CANCEL ORDER',
+                              style: TextStyle(
+                                color: Colors.red,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    ],
+                  ),
+                ),
               );
             },
           );

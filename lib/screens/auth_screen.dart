@@ -291,8 +291,8 @@ class _AuthScreenState extends State<AuthScreen> {
     //Add user
     if (result.isEmpty) {
       await conn.query('''
-      INSERT INTO customers (Customer_Name,Mobile_Number,Email,Password,Social_Media_Handle)
-VALUES ('$firstName $lastName', $phoneNumber,'$email','$password', '@$username');
+      INSERT INTO customers (Customer_FirstName,Customer_LastName,Mobile_Number,Email,Password,Social_Media_Handle)
+VALUES ('$firstName', '$lastName',$phoneNumber,'$email','$password', '@$username');
       ''');
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Account created successfully!')));

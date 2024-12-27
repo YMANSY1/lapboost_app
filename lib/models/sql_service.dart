@@ -6,7 +6,7 @@ class SqlService {
       port: 3306,
       user: 'root',
       password: 'Jeffxddowdowdow1234@',
-      db: 'lapboost');
+      db: 'lapboost2');
 
   static Future<MySqlConnection> getConnection() async {
     final conn = await MySqlConnection.connect(settings);
